@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: 'Press Start 2P', cursive; /* Apply arcade font */
+            background-color: #1a1a1a; /* Dark background */
+            color: #ffffff; /* White text */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+
+        h1 {
+            font-size: 2.5rem; /* Larger title */
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px #ff00ff; /* Neon pink shadow */
+        }
+
+        #game-container {
+            position: relative; /* Needed for absolute positioning of message box */
+            border: 8px solid #444; /* Thicker border */
+            border-radius: 10px; /* Rounded corners */
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5); /* Cyan glow */
+            background-color: #000; /* Black game area */
+            display: flex; /* Use flexbox for canvas centering */
+            justify-content: center;
+            align-items: center;
+            width: 90vw; /* Responsive width */
+            max-width: 500px; /* Max width */
+            height: 90vw; /* Responsive height */
+            max-height: 500px; /* Max height */
+        }
+
+        #gameCanvas {
+            display: block; /* Remove extra space below canvas */
+            background-color: #000; /* Black canvas background */
+            border-radius: 2px; /* Slightly rounded canvas corners inside border */
+            width: 100%;
+            height: 100%;
+        }
+
+        #score-board {
+            margin-top: 1rem;
+            font-size: 1.2rem;
+            text-align: center;
+        }
+
+        #controls {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem; /* Space between buttons */
+        }
+
+        .control-button, #restart-button {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #333;
+            color: #fff;
+            border: 2px solid #555;
+            padding: 10px 15px;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.2s, transform 0.1s;
+            box-shadow: 2px 2px #000;
+        }
+
+        .control-button:active, #restart-button:active {
+            transform: translateY(2px);
+            box-shadow: none;
+        }
+
+        .control-button:hover, #restart-button:hover {
+            background-color: #555;
+        }
+
+        #message-box {
+            position: absolute; /* Position over the canvas */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(50, 50, 50, 0.9); /* Semi-transparent dark background */
+            color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.5rem;
+            border: 4px solid #777;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+            z-index: 10; /* Ensure it's above the canvas */
+            display: none; /* Hidden by default */
+        }
+
+        #message-box p {
+            margin-bottom: 15px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>SNAKE GAME</h1>
+    <h2>ARE YOU A NINJA ON THE KEYBOARD?</h2>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="message-box">
+            <p id="message-text">Game Over!</p>
+            <button id="restart-button">You got this!</button>
+        </div>
+    </div>
+
+    <div id="score-board">SCORE: <span id="score">0</span></div>
+
+    <div id="controls">
+        <button class="control-button" id="up-button">▲</button>
+        <button class="control-button" id="down-button">▼</button>
+        <button class="control-button" id="left-button">◄</button>
+        <button class="control-button" id="right-button">►</button>
+    </div>
+
+    <br>
+    <a href="/startbootstrap-grayscale-gh-pages/index.html">Home Page</a>
+    <br>
+    <a href="/startbootstrap-grayscale-gh-pages/resume.html">My Resume</a>
+
+    <script>
+        // --- Game Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const restartButton = document.getElementById('restart-button');
+        const gameContainer = document.getElementById('game-container');
+
+        // Game constants
+        const gridSize = 20; // Size of each grid cell (and snake segment/food)
+        let tileCountX; // Number of tiles horizontally
+        let tileCountY; // Number of tiles vertically
+
+        // Game state variables
+        let snake = []; // Array of {x, y} objects representing snake segments
+        let food = { x: 0, y: 0 }; // Position of the food
+        let dx = gridSize; // Horizontal velocity (start moving right)
+        let dy = 0;        // Vertical velocity
+        let score = 0;
+        let changingDirection = false; // Prevent rapid 180-degree turns
+        let gameLoopTimeout; // To control game speed and allow stopping
+        let isGameOver = false;
+        let gameSpeed = 150; // Milliseconds between updates (lower is faster)
+
+        // --- Game Initialization ---
+
+        function resizeCanvas() {
+            // Make canvas dimensions multiples of gridSize for perfect fit
+            const containerWidth = gameContainer.clientWidth;
+            const containerHeight = gameContainer.clientHeight;
+            canvas.width = Math.floor(containerWidth / gridSize) * gridSize;
+            canvas.height = Math.floor(containerHeight / gridSize) * gridSize;
+            tileCountX = canvas.width / gridSize;
+            tileCountY = canvas.height / gridSize;
+        }
+
+        function initializeGame() {
+            resizeCanvas(); // Set initial canvas size
+
+            // Reset game state
+            snake = [
+                { x: Math.floor(tileCountX / 2) * gridSize, y: Math.floor(tileCountY / 2) * gridSize }, // Center segment 1
+                { x: (Math.floor(tileCountX / 2) - 1) * gridSize, y: Math.floor(tileCountY / 2) * gridSize }, // Segment 2 to the left
+                { x: (Math.floor(tileCountX / 2) - 2) * gridSize, y: Math.floor(tileCountY / 2) * gridSize }  // Segment 3 to the left
+            ];
+            dx = gridSize; // Start moving right
+            dy = 0;
+            score = 0;
+            scoreElement.textContent = score;
+            changingDirection = false;
+            isGameOver = false;
+            messageBox.style.display = 'none'; // Hide game over message
+
+            placeFood(); // Place the first piece of food
+            startGameLoop(); // Start the game
+        }
+
+        // --- Game Loop ---
+
+        function startGameLoop() {
+            if (isGameOver) return; // Stop loop if game over
+
+            clearTimeout(gameLoopTimeout); // Clear previous timeout
+
+            gameLoopTimeout = setTimeout(() => {
+                changingDirection = false; // Allow direction change for the next frame
+                clearCanvas();
+                moveSnake();
+                drawFood();
+                drawSnake();
+                checkCollision(); // Check collisions *after* moving and drawing
+                if (!isGameOver) {
+                    startGameLoop(); // Continue the loop
+                }
+            }, gameSpeed);
+        }
+
+        function clearCanvas() {
+            ctx.fillStyle = '#000'; // Black background
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // --- Snake Logic ---
+
+        function drawSnakePart(snakePart) {
+            ctx.fillStyle = '#00ff00'; // Bright green snake
+            ctx.strokeStyle = '#003300'; // Dark green border
+            ctx.fillRect(snakePart.x, snakePart.y, gridSize, gridSize);
+            ctx.strokeRect(snakePart.x, snakePart.y, gridSize, gridSize);
+        }
+
+        function drawSnake() {
+            snake.forEach(drawSnakePart);
+        }
+
+        function moveSnake() {
+            // Create the new head position based on current velocity
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+            // Add the new head to the beginning of the snake array
+            snake.unshift(head);
+
+            // Check if the snake ate the food
+            const didEatFood = snake[0].x === food.x && snake[0].y === food.y;
+            if (didEatFood) {
+                score += 10;
+                scoreElement.textContent = score;
+                placeFood(); // Place new food
+                // Increase speed slightly (optional)
+                // if (gameSpeed > 50) gameSpeed -= 5;
+            } else {
+                // Remove the tail segment if no food was eaten
+                snake.pop();
+            }
+        }
+
+        function changeDirection(event) {
+            if (changingDirection || isGameOver) return; // Prevent changing direction too quickly or when game over
+
+            const keyPressed = event.keyCode;
+            const goingUp = dy === -gridSize;
+            const goingDown = dy === gridSize;
+            const goingRight = dx === gridSize;
+            const goingLeft = dx === -gridSize;
+
+            // Left arrow or A key
+            if ((keyPressed === 37 || keyPressed === 65) && !goingRight) {
+                dx = -gridSize;
+                dy = 0;
+                changingDirection = true;
+            }
+            // Up arrow or W key
+            if ((keyPressed === 38 || keyPressed === 87) && !goingDown) {
+                dx = 0;
+                dy = -gridSize;
+                changingDirection = true;
+            }
+            // Right arrow or D key
+            if ((keyPressed === 39 || keyPressed === 68) && !goingLeft) {
+                dx = gridSize;
+                dy = 0;
+                changingDirection = true;
+            }
+            // Down arrow or S key
+            if ((keyPressed === 40 || keyPressed === 83) && !goingUp) {
+                dx = 0;
+                dy = gridSize;
+                changingDirection = true;
+            }
+        }
+
+        // --- Food Logic ---
+
+        function randomPosition(max) {
+            // Generate random position aligned to the grid
+            return Math.floor(Math.random() * max) * gridSize;
+        }
+
+        function placeFood() {
+            // Keep generating positions until it's not on the snake
+            let newFoodX, newFoodY;
+            do {
+                newFoodX = randomPosition(tileCountX);
+                newFoodY = randomPosition(tileCountY);
+            } while (snake.some(segment => segment.x === newFoodX && segment.y === newFoodY));
+
+            food = { x: newFoodX, y: newFoodY };
+        }
+
+        function drawFood() {
+            ctx.fillStyle = '#ff0000'; // Red food
+            ctx.strokeStyle = '#550000'; // Dark red border
+            ctx.fillRect(food.x, food.y, gridSize, gridSize);
+            ctx.strokeRect(food.x, food.y, gridSize, gridSize);
+        }
+
+        // --- Collision Detection & Game Over ---
+
+        function checkCollision() {
+            const head = snake[0];
+
+            // Check collision with walls
+            const hitLeftWall = head.x < 0;
+            const hitRightWall = head.x >= canvas.width;
+            const hitTopWall = head.y < 0;
+            const hitBottomWall = head.y >= canvas.height;
+
+            if (hitLeftWall || hitRightWall || hitTopWall || hitBottomWall) {
+                gameOver();
+                return; // Stop checking if wall hit
+            }
+
+            // Check collision with self (ignore the head itself)
+            for (let i = 1; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    gameOver();
+                    return; // Stop checking if self hit
+                }
+            }
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            clearTimeout(gameLoopTimeout); // Stop the game loop
+            messageText.textContent = `Game Over! Score: ${score}`;
+            messageBox.style.display = 'block'; // Show the message box
+        }
+
+        // --- Event Listeners ---
+
+        // Keyboard input
+        document.addEventListener('keydown', changeDirection);
+
+        // Restart button
+        restartButton.addEventListener('click', initializeGame);
+
+        // On-screen button controls
+        document.getElementById('up-button').addEventListener('click', () => {
+            if (!changingDirection && dy !== gridSize) { dx = 0; dy = -gridSize; changingDirection = true; }
+        });
+        document.getElementById('down-button').addEventListener('click', () => {
+            if (!changingDirection && dy !== -gridSize) { dx = 0; dy = gridSize; changingDirection = true; }
+        });
+        document.getElementById('left-button').addEventListener('click', () => {
+            if (!changingDirection && dx !== gridSize) { dx = -gridSize; dy = 0; changingDirection = true; }
+        });
+        document.getElementById('right-button').addEventListener('click', () => {
+            if (!changingDirection && dx !== -gridSize) { dx = gridSize; dy = 0; changingDirection = true; }
+        });
+
+        // Resize listener
+        window.addEventListener('resize', () => {
+            // Simple approach: restart game on resize to handle canvas dimension changes
+            // More complex logic could try to preserve state, but restarting is easier
+            if (!isGameOver) {
+                 gameOver(); // End current game
+                 messageText.textContent = "Screen Resized! Restarting...";
+            } else {
+                 // If already game over, just allow restart with new dimensions
+                 messageText.textContent = `Game Over! Score: ${score}`;
+            }
+            resizeCanvas(); // Adjust canvas size immediately
+            // No automatic restart here, user clicks restart button
+        });
+
+
+        // --- Start the game on load ---
+        window.onload = initializeGame;
+
+    </script>
+
+</body>
+</html>
